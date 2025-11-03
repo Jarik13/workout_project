@@ -1,0 +1,38 @@
+name: workout_app_new
+description: "A new Flutter project."
+publish_to: 'none' 
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.9.2
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.2
+  firebase_core: ^4.2.0
+  firebase_auth: ^6.1.1
+  cloud_firestore: ^6.0.3
+  fl_chart: ^1.1.1
+  firebase_crashlytics: ^5.0.3
+  firebase_analytics: ^12.0.3
+  google_sign_in: ^6.1.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/images/track_goal.png
+    - assets/images/get_burn.png
+    - assets/images/eat_well.png
+    - assets/images/sleep_quality.png
+    - assets/images/fullbody_workout.png
+    - assets/images/lowerbody_workout.png
+    - assets/images/ab_workout.png
+    - assets/images/lunch_notification.png
+    - assets/images/nutrition_notification.png
