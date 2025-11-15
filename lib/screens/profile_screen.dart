@@ -30,12 +30,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   void _setupCrashlytics() {
-    // Встановлюємо користувача для Crashlytics
     if (_currentUser != null) {
       _crashlytics.setUserIdentifier(_currentUser.uid);
     }
     
-    // Додаємо кастомні ключі
     _crashlytics.setCustomKey('screen', 'profile_screen');
     _crashlytics.setCustomKey('user_has_data', _userData != null);
   }
@@ -62,7 +60,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
         _isLoading = false;
       });
 
-      // Оновлюємо Crashlytics з новими даними
       _crashlytics.setCustomKey('user_has_data', _userData != null);
       _crashlytics.setCustomKey('user_goal', _userData?['goal'] ?? 'not_set');
 
@@ -72,7 +69,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
       );
 
     } catch (e, stackTrace) {
-      // Логуємо помилку в Crashlytics
       await _crashlytics.recordError(
         e,
         stackTrace,
@@ -99,11 +95,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
           _notificationsEnabled = settingsDoc.data()?['notificationsEnabled'] ?? true;
         });
         
-        // Оновлюємо Crashlytics
         _crashlytics.setCustomKey('notifications_enabled', _notificationsEnabled);
       }
     } catch (e, stackTrace) {
-      // Логуємо помилку в Crashlytics
       await _crashlytics.recordError(
         e,
         stackTrace,
@@ -131,11 +125,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
         _notificationsEnabled = enabled;
       });
 
-      // Оновлюємо Crashlytics
       _crashlytics.setCustomKey('notifications_enabled', enabled);
       _crashlytics.log('User ${enabled ? 'enabled' : 'disabled'} notifications');
 
-      // Сповіщення про зміну налаштувань
       _notificationService.createNotification(
         title: enabled ? "Notifications enabled 🔔" : "Notifications disabled 🔕",
         image: "assets/images/notification_settings.png",
@@ -144,7 +136,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
       _showSnackBar(enabled ? "Notifications enabled" : "Notifications disabled");
 
     } catch (e, stackTrace) {
-      // Логуємо помилку в Crashlytics
       await _crashlytics.recordError(
         e,
         stackTrace,
@@ -173,20 +164,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
         _userData?[field] = value;
       });
 
-      // Оновлюємо Crashlytics
       _crashlytics.setCustomKey('user_$field', value.toString());
       _crashlytics.log('User updated $field to $value');
 
-      // Сповіщення про оновлення профілю
       _notificationService.createNotification(
         title: "Profile updated: $field",
         image: "assets/images/profile_updated.png",
       );
 
       _showSnackBar("Profile updated successfully!");
-
     } catch (e, stackTrace) {
-      // Логуємо помилку в Crashlytics
       await _crashlytics.recordError(
         e,
         stackTrace,
@@ -199,13 +186,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
-  // Метод для тестування Crashlytics - генерація тестової помилки
   Future<void> _testCrashlytics() async {
     try {
-      // Генеруємо тестову помилку
       throw Exception('This is a test exception for Crashlytics from ProfileScreen');
     } catch (e, stackTrace) {
-      // Логуємо помилку в Crashlytics
       await _crashlytics.recordError(
         e,
         stackTrace,
@@ -217,9 +201,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
-  // Метод для тестування фатальної помилки
   void _testFatalError() {
-    // Це викличе фатальну помилку, яка буде записана в Crashlytics
     _crashlytics.crash();
   }
 
@@ -287,7 +269,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     await _updateProfileField('age', int.parse(ageController.text));
                   }
                 } catch (e, stackTrace) {
-                  // Логуємо помилку парсингу в Crashlytics
                   await _crashlytics.recordError(
                     e,
                     stackTrace,
@@ -428,7 +409,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ),
         centerTitle: true,
         actions: [
-          // Кнопка для тестування Crashlytics (тимчасова для демонстрації)
           IconButton(
             icon: Icon(Icons.bug_report, color: Colors.red),
             onPressed: _testCrashlytics,
@@ -449,7 +429,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   _buildNotificationSection(),
                   SizedBox(height: 20),
                   _buildOtherSection(),
-                  // Секція для тестування Crashlytics (тимчасово)
                   _buildCrashlyticsTestSection(),
                 ],
               ),

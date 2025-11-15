@@ -1,113 +1,46 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
+import '../blocs/notifications_bloc.dart';
 
 class NotificationsScreen extends StatefulWidget {
   const NotificationsScreen({super.key});
 
   @override
-  _NotificationsScreenState createState() => _NotificationsScreenState();
+  State<NotificationsScreen> createState() => _NotificationsScreenState();
 }
 
 class _NotificationsScreenState extends State<NotificationsScreen> {
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final User? _currentUser = FirebaseAuth.instance.currentUser;
-  
-  List<Map<String, dynamic>> _notifications = [];
-  bool _isLoading = true;
-
   @override
-  void initState() {
-    super.initState();
-    _loadNotifications();
+  Widget build(BuildContext context) {
+    return BlocProvider(
+      create: (context) => NotificationsBloc()..add(LoadNotificationsEvent()),
+      child: const _NotificationsScreenContent(),
+    );
   }
+}
 
-  Future<void> _loadNotifications() async {
-    if (_currentUser == null) {
-      setState(() => _isLoading = false);
-      return;
-    }
+class _NotificationsScreenContent extends StatelessWidget {
+  const _NotificationsScreenContent();
 
-    try {
-      final snapshot = await _firestore
-          .collection('user_notifications')
-          .doc(_currentUser.uid)
-          .collection('notifications')
-          .orderBy('timestamp', descending: true)
-          .get();
-
-      setState(() {
-        _notifications = snapshot.docs.map((doc) {
-          final data = doc.data();
-          return {
-            'id': doc.id,
-            'title': data['title'] ?? '',
-            'time': _formatTime(data['timestamp']),
-            'image': data['image'] ?? 'assets/images/default_notification.png',
-            'timestamp': data['timestamp'],
-            'read': data['read'] ?? false,
-          };
-        }).toList();
-        _isLoading = false;
-      });
-    } catch (e) {
-      print('Error loading notifications: $e');
-      setState(() => _isLoading = false);
-    }
-  }
-
-  Future<void> _clearAllNotifications() async {
-    if (_currentUser == null) return;
-
+  void _showClearAllDialog(BuildContext context) {
     showDialog(
       context: context,
-      builder: (BuildContext context) {
+      builder: (BuildContext dialogContext) {
         return AlertDialog(
-          title: Text("Clear All Notifications"),
-          content: Text("Are you sure you want to clear all notifications?"),
+          title: const Text("Clear All Notifications"),
+          content: const Text("Are you sure you want to clear all notifications?"),
           actions: [
             TextButton(
-              onPressed: () => Navigator.of(context).pop(),
+              onPressed: () => Navigator.of(dialogContext).pop(),
               child: Text("Cancel", style: TextStyle(color: Colors.grey[600])),
             ),
             TextButton(
-              onPressed: () async {
-                Navigator.of(context).pop();
-                
-                try {
-                  final snapshot = await _firestore
-                      .collection('user_notifications')
-                      .doc(_currentUser.uid)
-                      .collection('notifications')
-                      .get();
-
-                  final batch = _firestore.batch();
-                  for (final doc in snapshot.docs) {
-                    batch.delete(doc.reference);
-                  }
-                  await batch.commit();
-
-                  setState(() {
-                    _notifications.clear();
-                  });
-                  
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text("All notifications cleared"),
-                      backgroundColor: Colors.green,
-                    ),
-                  );
-                } catch (e) {
-                  print('Error clearing notifications: $e');
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text("Error clearing notifications"),
-                      backgroundColor: Colors.red,
-                    ),
-                  );
-                }
+              onPressed: () {
+                Navigator.of(dialogContext).pop();
+                context.read<NotificationsBloc>().add(ClearAllNotificationsEvent());
               },
-              child: Text("Clear All", style: TextStyle(color: Colors.red)),
+              child: const Text("Clear All", style: TextStyle(color: Colors.red)),
             ),
           ],
         );
@@ -115,75 +48,259 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     );
   }
 
-  Future<void> _deleteNotification(String notificationId) async {
-    try {
-      await _firestore
-          .collection('user_notifications')
-          .doc(_currentUser!.uid)
-          .collection('notifications')
-          .doc(notificationId)
-          .delete();
-
-      setState(() {
-        _notifications.removeWhere((notification) => notification['id'] == notificationId);
-      });
-    } catch (e) {
-      print('Error deleting notification: $e');
-    }
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.white,
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios, color: Colors.black),
+          onPressed: () => Navigator.pop(context),
+        ),
+        title: const Text(
+          'Notification',
+          style: TextStyle(
+            color: Colors.black,
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        centerTitle: true,
+        actions: [
+          BlocBuilder<NotificationsBloc, NotificationsState>(
+            builder: (context, state) {
+              if (state is NotificationsLoaded && state.notifications.isNotEmpty) {
+                return Padding(
+                  padding: const EdgeInsets.only(right: 16.0),
+                  child: GestureDetector(
+                    onTap: () => _showClearAllDialog(context),
+                    child: const Text(
+                      "Clear All",
+                      style: TextStyle(
+                        color: Color(0xFF92A3FD),
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                );
+              }
+              return const SizedBox.shrink();
+            },
+          ),
+        ],
+      ),
+      body: BlocConsumer<NotificationsBloc, NotificationsState>(
+        listener: (context, state) {
+          if (state is NotificationsError) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(state.message),
+                backgroundColor: Colors.red,
+              ),
+            );
+          } else if (state is NotificationsCleared) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text("All notifications cleared"),
+                backgroundColor: Colors.green,
+              ),
+            );
+          }
+        },
+        builder: (context, state) {
+          if (state is NotificationsLoading) {
+            return _buildLoadingState(state.oldNotifications, context);
+          } else if (state is NotificationsError) {
+            return _buildErrorState(state, context);
+          } else if (state is NotificationsLoaded) {
+            return _buildNotificationsList(state.notifications, context);
+          } else {
+            return _buildLoadingState(null, context);
+          }
+        },
+      ),
+    );
   }
 
-  Future<void> _markAsRead(String notificationId) async {
-    try {
-      await _firestore
-          .collection('user_notifications')
-          .doc(_currentUser!.uid)
-          .collection('notifications')
-          .doc(notificationId)
-          .update({'read': true});
-
-      setState(() {
-        final index = _notifications.indexWhere((n) => n['id'] == notificationId);
-        if (index != -1) {
-          _notifications[index]['read'] = true;
-        }
-      });
-    } catch (e) {
-      print('Error marking notification as read: $e');
+  Widget _buildLoadingState(List<Map<String, dynamic>>? oldNotifications, BuildContext context) {
+    if (oldNotifications != null && oldNotifications.isNotEmpty) {
+      return _buildNotificationsList(oldNotifications, context);
     }
-  }
-
-  String _formatTime(dynamic timestamp) {
-    if (timestamp == null) return 'Unknown time';
     
-    DateTime date;
-    if (timestamp is Timestamp) {
-      date = timestamp.toDate();
-    } else if (timestamp is DateTime) {
-      date = timestamp;
-    } else {
-      return 'Unknown time';
-    }
-
-    final now = DateTime.now();
-    final difference = now.difference(date);
-
-    if (difference.inMinutes < 1) {
-      return 'Just now';
-    } else if (difference.inHours < 1) {
-      return '${difference.inMinutes} minutes ago';
-    } else if (difference.inHours < 24) {
-      return '${difference.inHours} hours ago';
-    } else if (difference.inDays < 7) {
-      return '${difference.inDays} days ago';
-    } else {
-      return '${date.day}/${date.month}/${date.year}';
-    }
+    return const Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          CircularProgressIndicator(color: Color(0xFF92A3FD)),
+          SizedBox(height: 20),
+          Text('Loading notifications...'),
+        ],
+      ),
+    );
   }
 
-  Map<String, List<Map<String, dynamic>>> _groupNotificationsByDate() {
+  Widget _buildErrorState(NotificationsError state, BuildContext context) {
+    final notifications = state.oldNotifications;
+    
+    if (notifications != null && notifications.isNotEmpty) {
+      return Column(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(16),
+            color: Colors.red[50],
+            child: Row(
+              children: [
+                const Icon(Icons.error_outline, color: Colors.red),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    state.message,
+                    style: const TextStyle(color: Colors.red),
+                  ),
+                ),
+                TextButton(
+                  onPressed: () => context.read<NotificationsBloc>().add(LoadNotificationsEvent()),
+                  child: const Text('Retry'),
+                ),
+              ],
+            ),
+          ),
+          Expanded(child: _buildNotificationsList(notifications, context)),
+        ],
+      );
+    }
+
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(Icons.error_outline, size: 64, color: Colors.red),
+          const SizedBox(height: 20),
+          const Text(
+            "Error Loading Notifications",
+            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 10),
+          Text(state.message, textAlign: TextAlign.center),
+          const SizedBox(height: 20),
+          ElevatedButton(
+            onPressed: () => context.read<NotificationsBloc>().add(LoadNotificationsEvent()),
+            child: const Text("Try Again"),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildNotificationsList(List<Map<String, dynamic>> notifications, BuildContext context) {
+    final groupedNotifications = _groupNotificationsByDate(notifications);
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(20.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (notifications.isNotEmpty)
+            Container(
+              width: double.infinity,
+              margin: const EdgeInsets.only(bottom: 20),
+              child: ElevatedButton(
+                onPressed: () => _showClearAllDialog(context),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF92A3FD).withOpacity(0.1),
+                  foregroundColor: const Color(0xFF92A3FD),
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(15),
+                  ),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                ),
+                child: const Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.clear_all, size: 20),
+                    SizedBox(width: 8),
+                    Text(
+                      "Clear All Notifications",
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+          if (notifications.isEmpty)
+            _buildEmptyState()
+          else
+            ...groupedNotifications.entries.map((entry) {
+              return Column(
+                children: [
+                  _buildNotificationSection(
+                    context,
+                    entry.key,
+                    entry.value.map((notification) {
+                      return _buildNotificationItem(notification, context);
+                    }).toList(),
+                  ),
+                  const SizedBox(height: 20),
+                ],
+              );
+            }),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEmptyState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            width: 120,
+            height: 120,
+            decoration: BoxDecoration(
+              color: Colors.grey[100],
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              Icons.notifications_off_outlined,
+              size: 50,
+              color: Colors.grey[400],
+            ),
+          ),
+          const SizedBox(height: 20),
+          const Text(
+            "No Notifications",
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+              color: Colors.grey,
+            ),
+          ),
+          const SizedBox(height: 10),
+          const Text(
+            "You're all caught up!",
+            style: TextStyle(
+              fontSize: 16,
+              color: Colors.grey,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Map<String, List<Map<String, dynamic>>> _groupNotificationsByDate(List<Map<String, dynamic>> notifications) {
     final grouped = <String, List<Map<String, dynamic>>>{};
     
-    for (final notification in _notifications) {
+    for (final notification in notifications) {
       final timestamp = notification['timestamp'];
       DateTime date;
       
@@ -223,175 +340,19 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     return months[month - 1];
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final groupedNotifications = _groupNotificationsByDate();
-
-    return Scaffold(
-      backgroundColor: Colors.white,
-      appBar: AppBar(
-        backgroundColor: Colors.white,
-        elevation: 0,
-        leading: IconButton(
-          icon: Icon(Icons.arrow_back_ios, color: Colors.black),
-          onPressed: () => Navigator.pop(context),
-        ),
-        title: Text(
-          'Notification',
-          style: TextStyle(
-            color: Colors.black,
-            fontSize: 20,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-        centerTitle: true,
-        actions: [
-          if (_notifications.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.only(right: 16.0),
-              child: GestureDetector(
-                onTap: _clearAllNotifications,
-                child: Text(
-                  "Clear All",
-                  style: TextStyle(
-                    color: Color(0xFF92A3FD),
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            ),
-        ],
-      ),
-      body: _isLoading
-          ? _buildLoadingState()
-          : _notifications.isEmpty
-              ? _buildEmptyState()
-              : _buildNotificationsList(groupedNotifications),
-    );
-  }
-
-  Widget _buildLoadingState() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          CircularProgressIndicator(color: Color(0xFF92A3FD)),
-          SizedBox(height: 20),
-          Text('Loading notifications...'),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildEmptyState() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Container(
-            width: 120,
-            height: 120,
-            decoration: BoxDecoration(
-              color: Colors.grey[100],
-              shape: BoxShape.circle,
-            ),
-            child: Icon(
-              Icons.notifications_off_outlined,
-              size: 50,
-              color: Colors.grey[400],
-            ),
-          ),
-          SizedBox(height: 20),
-          Text(
-            "No Notifications",
-            style: TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.bold,
-              color: Colors.grey[600],
-            ),
-          ),
-          SizedBox(height: 10),
-          Text(
-            "You're all caught up!",
-            style: TextStyle(
-              fontSize: 16,
-              color: Colors.grey[500],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildNotificationsList(Map<String, List<Map<String, dynamic>>> groupedNotifications) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(20.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: double.infinity,
-            margin: EdgeInsets.only(bottom: 20),
-            child: ElevatedButton(
-              onPressed: _clearAllNotifications,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Color(0xFF92A3FD).withOpacity(0.1),
-                foregroundColor: Color(0xFF92A3FD),
-                elevation: 0,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(15),
-                ),
-                padding: EdgeInsets.symmetric(vertical: 12),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.clear_all, size: 20),
-                  SizedBox(width: 8),
-                  Text(
-                    "Clear All Notifications",
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-
-          ...groupedNotifications.entries.map((entry) {
-            return Column(
-              children: [
-                _buildNotificationSection(
-                  entry.key,
-                  entry.value.map((notification) {
-                    return _buildNotificationItem(notification);
-                  }).toList(),
-                ),
-                SizedBox(height: 20),
-              ],
-            );
-          }),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildNotificationSection(String title, List<Widget> notifications) {
+  Widget _buildNotificationSection(BuildContext context, String title, List<Widget> notifications) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
           title,
-          style: TextStyle(
+          style: const TextStyle(
             fontSize: 18,
             fontWeight: FontWeight.bold,
             color: Colors.black,
           ),
         ),
-        SizedBox(height: 15),
+        const SizedBox(height: 15),
         Container(
           decoration: BoxDecoration(
             color: Colors.grey[50],
@@ -400,7 +361,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
               BoxShadow(
                 color: Colors.grey.withOpacity(0.1),
                 blurRadius: 10,
-                offset: Offset(0, 5),
+                offset: const Offset(0, 5),
               ),
             ],
           ),
@@ -412,17 +373,19 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     );
   }
 
-  Widget _buildNotificationItem(Map<String, dynamic> notification) {
+  Widget _buildNotificationItem(Map<String, dynamic> notification, BuildContext context) {
     return Dismissible(
       key: Key(notification['id']),
       direction: DismissDirection.endToStart,
       background: Container(
         color: Colors.red,
         alignment: Alignment.centerRight,
-        padding: EdgeInsets.only(right: 20),
-        child: Icon(Icons.delete, color: Colors.white),
+        padding: const EdgeInsets.only(right: 20),
+        child: const Icon(Icons.delete, color: Colors.white),
       ),
-      onDismissed: (direction) => _deleteNotification(notification['id']),
+      onDismissed: (direction) {
+        context.read<NotificationsBloc>().add(DeleteNotificationEvent(notification['id']));
+      },
       child: Column(
         children: [
           Padding(
@@ -441,7 +404,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                     ),
                   ),
                 ),
-                SizedBox(width: 15),
+                const SizedBox(width: 15),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -454,12 +417,12 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                           color: notification['read'] ? Colors.grey[600] : Colors.black,
                         ),
                       ),
-                      SizedBox(height: 5),
+                      const SizedBox(height: 5),
                       Text(
                         notification['time'],
-                        style: TextStyle(
+                        style: const TextStyle(
                           fontSize: 12,
-                          color: Colors.grey[600],
+                          color: Colors.grey,
                         ),
                       ),
                     ],
@@ -467,11 +430,11 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                 ),
                 if (!notification['read'])
                   GestureDetector(
-                    onTap: () => _markAsRead(notification['id']),
+                    onTap: () => context.read<NotificationsBloc>().add(MarkAsReadEvent(notification['id'])),
                     child: Container(
                       width: 8,
                       height: 8,
-                      decoration: BoxDecoration(
+                      decoration: const BoxDecoration(
                         color: Color(0xFF92A3FD),
                         shape: BoxShape.circle,
                       ),

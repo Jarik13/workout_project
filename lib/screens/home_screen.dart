@@ -3,16 +3,17 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'profile_screen.dart';
 import 'activity_tracker_screen.dart';
 import 'notifications_screen.dart';
 import '../services/notification_service.dart';
+import '../blocs/workouts_bloc.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
   @override
-  // ignore: library_private_types_in_public_api
   _HomeScreenState createState() => _HomeScreenState();
 }
 
@@ -30,7 +31,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Map<String, dynamic>? _userData;
   Map<String, dynamic>? _userMetrics;
-  Map<String, dynamic>? _userWorkouts;
   bool _isLoading = true;
 
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
@@ -77,26 +77,16 @@ class _HomeScreenState extends State<HomeScreen> {
           .doc(_currentUser.uid)
           .get();
 
-      final workoutsDoc = await _firestore
-          .collection('user_workouts')
-          .doc(_currentUser.uid)
-          .get();
-
       setState(() {
         _userData = userDoc.data();
         _userMetrics = metricsDoc.data();
-        _userWorkouts = workoutsDoc.data();
         _isLoading = false;
       });
 
-      _trackDataLoaded(userDoc.exists, metricsDoc.exists, workoutsDoc.exists);
+      _trackDataLoaded(userDoc.exists, metricsDoc.exists);
 
       if (!metricsDoc.exists) {
         await _createDefaultMetrics();
-      }
-
-      if (!workoutsDoc.exists) {
-        await _createDefaultWorkouts();
       }
 
       _notificationService.createNotification(
@@ -113,14 +103,13 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  void _trackDataLoaded(bool userExists, bool metricsExists, bool workoutsExists) {
+  void _trackDataLoaded(bool userExists, bool metricsExists) {
     try {
       _analytics.logEvent(
         name: 'user_data_loaded',
         parameters: {
           'user_exists': userExists.toString(),
           'metrics_exists': metricsExists.toString(),
-          'workouts_exists': workoutsExists.toString(),
         },
       );
     } catch (e) {
@@ -143,21 +132,11 @@ class _HomeScreenState extends State<HomeScreen> {
 
   void _checkProgressAndNotify() {
     final metrics = _dailyMetrics;
-    final workouts = _latestWorkouts;
-
     final steps = metrics['steps'] ?? 0;
     if (steps < 3000) {
       _notificationService.createNotification(
         title: "Let's get moving! You've only taken $steps steps today.",
         image: "assets/images/low_activity.png",
-      );
-    }
-
-    final incompleteWorkouts = workouts.where((workout) => workout['completed'] == false).length;
-    if (incompleteWorkouts > 0) {
-      _notificationService.createNotification(
-        title: "You have $incompleteWorkouts workouts to complete!",
-        image: "assets/images/pending_workouts.png",
       );
     }
 
@@ -196,82 +175,35 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Future<void> _createDefaultWorkouts() async {
-    final defaultWorkouts = {
-      'latestWorkouts': [
-        {
-          'title': "Fullbody Workout",
-          'description': "11 Exercises | 32mins",
-          'type': "strength",
-          'duration': 32,
-          'completed': true,
-          'date': FieldValue.serverTimestamp(),
-        },
-        {
-          'title': "Lowerbody Workout",
-          'description': "12 Exercises | 40mins",
-          'type': "strength", 
-          'duration': 40,
-          'completed': false,
-          'date': FieldValue.serverTimestamp(),
-        },
-        {
-          'title': "AB Workout",
-          'description': "14 Exercises | 20mins",
-          'type': "core",
-          'duration': 20,
-          'completed': false,
-          'date': FieldValue.serverTimestamp(),
-        }
-      ],
-      'totalWorkouts': 0,
-      'workoutStats': {
-        'upperbody': 0.0,
-        'lowerbody': 0.0,
-        'cardio': 0.0,
-      }
-    };
-
-    await _firestore
-        .collection('user_workouts')
-        .doc(_currentUser!.uid)
-        .set(defaultWorkouts);
-
-    _notificationService.createNotification(
-      title: "Workout plans are ready! Check out your new routines.",
-      image: "assets/images/workouts_created.png",
-    );
-  }
-
-  Future<void> _completeWorkout(int index) async {
+  Future<void> _completeWorkout(int index, BuildContext context) async {
     try {
-      final workout = _latestWorkouts[index];
-      final workoutName = workout['title'] ?? 'Workout';
+      final workoutBloc = context.read<WorkoutBloc>();
+      final currentState = workoutBloc.state;
       
-      await _firestore
-          .collection('user_workouts')
-          .doc(_currentUser!.uid)
-          .update({
-            'latestWorkouts.$index.completed': true,
-            'latestWorkouts.$index.date': FieldValue.serverTimestamp(),
-          });
+      if (currentState is WorkoutDataState) {
+        final updatedWorkouts = List<Map<String, dynamic>>.from(currentState.data);
+        final workout = updatedWorkouts[index];
+        final workoutName = workout['title'] ?? 'Workout';
+        
+        updatedWorkouts[index] = {
+          ...workout,
+          'completed': true,
+        };
 
-      setState(() {
-        _userWorkouts?['latestWorkouts'][index]['completed'] = true;
-      });
+        workoutBloc.add(RefreshWorkoutsEvent());
 
-      _trackWorkoutCompleted(workoutName, workout['type'], workout['duration']);
+        _trackWorkoutCompleted(workoutName, workout['type'], workout['duration']);
 
-      await _notificationService.createWorkoutCompletionNotification(workoutName);
+        await _notificationService.createWorkoutCompletionNotification(workoutName);
 
-      final completedWorkouts = _latestWorkouts.where((w) => w['completed'] == true).length;
-      if (completedWorkouts % 3 == 0) {
-        _notificationService.createNotification(
-          title: "Amazing! You've completed $completedWorkouts workouts! 🎉",
-          image: "assets/images/milestone.png",
-        );
+        final completedWorkouts = updatedWorkouts.where((w) => w['completed'] == true).length;
+        if (completedWorkouts % 3 == 0) {
+          _notificationService.createNotification(
+            title: "Amazing! You've completed $completedWorkouts workouts! 🎉",
+            image: "assets/images/milestone.png",
+          );
+        }
       }
-
     } catch (e) {
       print('Error completing workout: $e');
     }
@@ -308,25 +240,6 @@ class _HomeScreenState extends State<HomeScreen> {
     if (data is List) return data;
     if (data is Map) return data.values.toList();
     return [3, 4, 2, 5, 3, 4, 6];
-  }
-
-  List<dynamic> get _latestWorkouts {
-    final data = _userWorkouts?['latestWorkouts'];
-    if (data is List) return data;
-    return [];
-  }
-
-  Map<String, dynamic> get _workoutStats {
-    final data = _userWorkouts?['workoutStats'];
-    if (data is Map) return data.cast<String, dynamic>();
-    return {};
-  }
-
-  int get _totalWorkouts {
-    final data = _userWorkouts?['totalWorkouts'];
-    if (data is int) return data;
-    if (data is String) return int.tryParse(data) ?? 0;
-    return 0;
   }
 
   double get _calculateBMI {
@@ -429,32 +342,35 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.white,
-      body: SafeArea(
-        child: _isLoading
-            ? _buildLoadingScreen()
-            : SingleChildScrollView(
-                padding: const EdgeInsets.all(20.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildHeader(),
-                    SizedBox(height: 30),
-                    _buildBMICard(),
-                    SizedBox(height: 20),
-                    _buildTodayTarget(),
-                    SizedBox(height: 20),
-                    _buildActivityStatus(),
-                    SizedBox(height: 20),
-                    _buildWorkoutProgress(),
-                    SizedBox(height: 20),
-                    _buildWeeklyProgress(),
-                    SizedBox(height: 20),
-                    _buildLatestWorkout(),
-                  ],
+    return BlocProvider(
+      create: (context) => WorkoutBloc()..add(RefreshWorkoutsEvent()),
+      child: Scaffold(
+        backgroundColor: Colors.white,
+        body: SafeArea(
+          child: _isLoading
+              ? _buildLoadingScreen()
+              : SingleChildScrollView(
+                  padding: const EdgeInsets.all(20.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _buildHeader(),
+                      SizedBox(height: 30),
+                      _buildBMICard(),
+                      SizedBox(height: 20),
+                      _buildTodayTarget(),
+                      SizedBox(height: 20),
+                      _buildActivityStatus(),
+                      SizedBox(height: 20),
+                      _buildWorkoutProgress(),
+                      SizedBox(height: 20),
+                      _buildWeeklyProgress(),
+                      SizedBox(height: 20),
+                      _buildLatestWorkout(),
+                    ],
+                  ),
                 ),
-              ),
+        ),
       ),
     );
   }
@@ -828,64 +744,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
         ),
-        SizedBox(height: 10),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            _buildProgressItem("$_totalWorkouts+", "TOTAL", 1.0, () {
-              _showSnackBar("Total workouts: $_totalWorkouts");
-              _notificationService.createNotification(
-                title: "Total workouts completed: $_totalWorkouts",
-                image: "assets/images/total_workouts.png",
-              );
-            }),
-            _buildProgressItem("${((_workoutStats['upperbody'] ?? 0) * 100).toInt()}%", "Upperbody\nWorkout", _workoutStats['upperbody'] ?? 0.0, 
-                () {
-              _showSnackBar("Upperbody workout: ${((_workoutStats['upperbody'] ?? 0) * 100).toInt()}% complete");
-              _notificationService.createNotification(
-                title: "Upperbody progress: ${((_workoutStats['upperbody'] ?? 0) * 100).toInt()}%",
-                image: "assets/images/upperbody_progress.png",
-              );
-            }),
-            _buildProgressItem("${((_workoutStats['lowerbody'] ?? 0) * 100).toInt()}%", "Lowerbody\nWorkout", _workoutStats['lowerbody'] ?? 0.0,
-                () {
-              _showSnackBar("Lowerbody workout: ${((_workoutStats['lowerbody'] ?? 0) * 100).toInt()}% complete");
-              _notificationService.createNotification(
-                title: "Lowerbody progress: ${((_workoutStats['lowerbody'] ?? 0) * 100).toInt()}%",
-                image: "assets/images/lowerbody_progress.png",
-              );
-            }),
-          ],
-        ),
       ],
-    );
-  }
-
-  Widget _buildProgressItem(String value, String title, double progress, VoidCallback onTap) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Column(
-        children: [
-          Text(value, style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-          SizedBox(height: 5),
-          Text(title, textAlign: TextAlign.center, style: TextStyle(fontSize: 10, color: Colors.grey[600])),
-          SizedBox(height: 8),
-          Container(
-            width: 40, height: 4,
-            decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(2)),
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: Container(
-                width: 40 * progress, height: 4,
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(colors: [Color(0xFF92A3FD), Color(0xFF9DCEFF)]),
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
     );
   }
 
@@ -985,8 +844,83 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildLatestWorkout() {
-    final workouts = _latestWorkouts;
+    return BlocBuilder<WorkoutBloc, WorkoutState>(
+      builder: (context, state) {
+        if (state is WorkoutLoadingState) {
+          return _buildWorkoutLoading();
+        } else if (state is WorkoutErrorState) {
+          return _buildWorkoutError(state.error, context);
+        } else if (state is WorkoutDataState) {
+          return _buildWorkoutList(state.data, context);
+        } else {
+          return _buildWorkoutLoading();
+        }
+      },
+    );
+  }
 
+  Widget _buildWorkoutLoading() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text("Recommended Workouts", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            GestureDetector(
+              onTap: () {
+                context.read<WorkoutBloc>().add(RefreshWorkoutsEvent());
+              },
+              child: Text("Refresh", style: TextStyle(color: Color(0xFF92A3FD), fontWeight: FontWeight.bold)),
+            ),
+          ],
+        ),
+        SizedBox(height: 15),
+        Center(
+          child: CircularProgressIndicator(color: Color(0xFF92A3FD)),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildWorkoutError(String error, BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text("Recommended Workouts", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            GestureDetector(
+              onTap: () {
+                context.read<WorkoutBloc>().add(RefreshWorkoutsEvent());
+              },
+              child: Text("Retry", style: TextStyle(color: Color(0xFF92A3FD), fontWeight: FontWeight.bold)),
+            ),
+          ],
+        ),
+        SizedBox(height: 15),
+        Container(
+          padding: EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: Colors.red[50],
+            borderRadius: BorderRadius.circular(15),
+          ),
+          child: Column(
+            children: [
+              Icon(Icons.error_outline, color: Colors.red, size: 40),
+              SizedBox(height: 10),
+              Text("Error loading workouts", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+              SizedBox(height: 5),
+              Text(error, textAlign: TextAlign.center, style: TextStyle(fontSize: 12, color: Colors.grey[600])),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildWorkoutList(List<Map<String, dynamic>> workouts, BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1025,6 +959,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   image: "assets/images/workout_started.png",
                 );
               },
+              onComplete: workout['completed'] == true ? null : () => _completeWorkout(index, context),
             ),
           );
         }),
@@ -1041,7 +976,15 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  Widget _buildWorkoutItem({required String title, required String subtitle, required String imageAsset, required VoidCallback onTap, bool isCompleted = false, int? index}) {
+  Widget _buildWorkoutItem({
+    required String title,
+    required String subtitle,
+    required String imageAsset,
+    required VoidCallback onTap,
+    bool isCompleted = false,
+    int? index,
+    VoidCallback? onComplete,
+  }) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
@@ -1076,9 +1019,9 @@ class _HomeScreenState extends State<HomeScreen> {
                 ],
               ),
             ),
-            if (!isCompleted && index != null)
+            if (!isCompleted && index != null && onComplete != null)
               GestureDetector(
-                onTap: () => _completeWorkout(index),
+                onTap: onComplete,
                 child: Container(
                   padding: EdgeInsets.all(8), 
                   decoration: BoxDecoration(

@@ -7,6 +7,7 @@ class CompleteProfileScreen extends StatefulWidget {
   const CompleteProfileScreen({super.key});
 
   @override
+  // ignore: library_private_types_in_public_api
   _CompleteProfileScreenState createState() => _CompleteProfileScreenState();
 }
 
@@ -238,7 +239,6 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
           ),
         ),
         SizedBox(height: 10),
-        // Unit Toggle
         Row(
           children: [
             _buildUnitOption("CM", true),
