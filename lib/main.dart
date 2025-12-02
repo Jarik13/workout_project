@@ -8,6 +8,7 @@ import 'screens/onboarding_screen.dart';
 import 'screens/register_screen.dart';
 import 'screens/login_screen.dart';
 import 'screens/complete_profile_screen.dart';
+import 'services/local_preferences.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -20,6 +21,8 @@ void main() async {
   
   await FirebaseCrashlytics.instance.setCrashlyticsCollectionEnabled(true);
   FlutterError.onError = FirebaseCrashlytics.instance.recordFlutterError;
+
+  await LocalPreferences.init();
   
   runApp(const MyApp());
 }

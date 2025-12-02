@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import '../services/notification_service.dart';
+import '../services/local_preferences.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -13,8 +14,12 @@ class ProfileScreen extends StatefulWidget {
 
 class _ProfileScreenState extends State<ProfileScreen> {
   bool _notificationsEnabled = true;
+  bool _localNotificationsEnabled = true;
+  bool _showMetrics = true;
   Map<String, dynamic>? _userData;
   bool _isLoading = true;
+  int _workoutStreak = 0;
+  int _totalMinutes = 0;
 
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final User? _currentUser = FirebaseAuth.instance.currentUser;
@@ -27,6 +32,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     _setupCrashlytics();
     _loadUserData();
     _loadNotificationSettings();
+    _loadLocalPreferences();
   }
 
   void _setupCrashlytics() {
@@ -109,6 +115,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
+  Future<void> _loadLocalPreferences() async {
+    setState(() {
+      _localNotificationsEnabled = LocalPreferences.getLocalNotifications();
+      _showMetrics = LocalPreferences.getShowMetrics();
+      _workoutStreak = LocalPreferences.getWorkoutStreak();
+      _totalMinutes = LocalPreferences.getTotalMinutes();
+    });
+  }
+
   Future<void> _updateNotificationSettings(bool enabled) async {
     if (_currentUser == null) return;
 
@@ -146,6 +161,29 @@ class _ProfileScreenState extends State<ProfileScreen> {
       print('Error updating notification settings: $e');
       _showSnackBar("Error updating settings");
     }
+  }
+
+  Future<void> _updateLocalNotificationSettings(bool enabled) async {
+    await LocalPreferences.saveLocalNotifications(enabled);
+    setState(() {
+      _localNotificationsEnabled = enabled;
+    });
+
+    _notificationService.createNotification(
+      title: enabled ? "Local notifications enabled 📱" : "Local notifications disabled",
+      image: "assets/images/notification_settings.png",
+    );
+
+    _showSnackBar(enabled ? "Local notifications enabled" : "Local notifications disabled");
+  }
+
+  Future<void> _updateShowMetrics(bool show) async {
+    await LocalPreferences.saveShowMetrics(show);
+    setState(() {
+      _showMetrics = show;
+    });
+
+    _showSnackBar(show ? "Metrics display enabled" : "Metrics display disabled");
   }
 
   Future<void> _updateProfileField(String field, dynamic value) async {
@@ -186,6 +224,27 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
+  Future<void> _addWorkoutTime(int minutes) async {
+    await LocalPreferences.addWorkoutMinutes(minutes);
+    await LocalPreferences.updateWorkoutStreak();
+    
+    setState(() {
+      _totalMinutes = LocalPreferences.getTotalMinutes();
+      _workoutStreak = LocalPreferences.getWorkoutStreak();
+    });
+
+    _notificationService.createNotification(
+      title: "Great workout! 🎯",
+      image: "assets/images/workout_completed.png",
+    );
+
+    _showSnackBar("Workout completed! +$minutes minutes");
+  }
+
+  void _testAddWorkout() {
+    _addWorkoutTime(30);
+  }
+
   Future<void> _testCrashlytics() async {
     try {
       throw Exception('This is a test exception for Crashlytics from ProfileScreen');
@@ -199,10 +258,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
       
       _showSnackBar('Test error logged to Crashlytics!');
     }
-  }
-
-  void _testFatalError() {
-    _crashlytics.crash();
   }
 
   void _showEditProfileDialog() {
@@ -255,7 +310,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 Navigator.of(context).pop();
                 
                 try {
-                  // Оновлення даних
                   if (nameController.text.isNotEmpty) {
                     await _updateProfileField('name', nameController.text);
                   }
@@ -410,6 +464,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
         centerTitle: true,
         actions: [
           IconButton(
+            icon: Icon(Icons.fitness_center, color: Color(0xFF92A3FD)),
+            onPressed: _testAddWorkout,
+            tooltip: 'Add Test Workout',
+          ),
+          IconButton(
             icon: Icon(Icons.bug_report, color: Colors.red),
             onPressed: _testCrashlytics,
             tooltip: 'Test Crashlytics',
@@ -429,7 +488,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   _buildNotificationSection(),
                   SizedBox(height: 20),
                   _buildOtherSection(),
-                  _buildCrashlyticsTestSection(),
                 ],
               ),
             ),
@@ -486,6 +544,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ),
         ),
         SizedBox(height: 20),
+        
+        // Локальна статистика
+        if (_showMetrics) _buildLocalStatsSection(),
+        
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceEvenly,
           children: [
@@ -505,6 +567,50 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ),
           ),
           child: Text("Edit Profile"),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildLocalStatsSection() {
+    return Container(
+      margin: EdgeInsets.only(bottom: 20),
+      padding: EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.grey[50],
+        borderRadius: BorderRadius.circular(15),
+        border: Border.all(color: Color(0xFF92A3FD).withOpacity(0.3)),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceAround,
+        children: [
+          _buildStatItem('$_workoutStreak', 'Day Streak', Icons.local_fire_department),
+          _buildStatItem('${_totalMinutes ~/ 60}h', 'Total Time', Icons.timer),
+          _buildStatItem('${_totalMinutes % 60}m', 'Minutes', Icons.fitness_center),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStatItem(String value, String label, IconData icon) {
+    return Column(
+      children: [
+        Icon(icon, color: Color(0xFF92A3FD), size: 24),
+        SizedBox(height: 5),
+        Text(
+          value,
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+            color: Colors.black,
+          ),
+        ),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 12,
+            color: Colors.grey[600],
+          ),
         ),
       ],
     );
@@ -587,19 +693,60 @@ class _ProfileScreenState extends State<ProfileScreen> {
     return _buildSection(
       title: 'Notification',
       children: [
+        // Cloud сповіщення (Firestore)
         Row(
           children: [
-            Icon(Icons.notifications_outlined, color: Colors.grey[600]),
+            Icon(Icons.cloud_outlined, color: Colors.grey[600]),
             SizedBox(width: 15),
             Expanded(
               child: Text(
-                'Pop-up Notification',
+                'Cloud Notifications',
                 style: TextStyle(fontSize: 16, color: Colors.black),
               ),
             ),
             Switch(
               value: _notificationsEnabled,
               onChanged: _updateNotificationSettings,
+              activeColor: Color(0xFF92A3FD),
+            ),
+          ],
+        ),
+        Divider(height: 20, color: Colors.grey[300]),
+        
+        // Локальні сповіщення (SharedPreferences)
+        Row(
+          children: [
+            Icon(Icons.phone_android_outlined, color: Colors.grey[600]),
+            SizedBox(width: 15),
+            Expanded(
+              child: Text(
+                'Local Notifications',
+                style: TextStyle(fontSize: 16, color: Colors.black),
+              ),
+            ),
+            Switch(
+              value: _localNotificationsEnabled,
+              onChanged: _updateLocalNotificationSettings,
+              activeColor: Color(0xFF92A3FD),
+            ),
+          ],
+        ),
+        Divider(height: 20, color: Colors.grey[300]),
+        
+        // Показ метрик
+        Row(
+          children: [
+            Icon(Icons.analytics_outlined, color: Colors.grey[600]),
+            SizedBox(width: 15),
+            Expanded(
+              child: Text(
+                'Show Workout Metrics',
+                style: TextStyle(fontSize: 16, color: Colors.black),
+              ),
+            ),
+            Switch(
+              value: _showMetrics,
+              onChanged: _updateShowMetrics,
               activeColor: Color(0xFF92A3FD),
             ),
           ],
@@ -642,46 +789,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
             _notificationService.createNotification(
               title: "Accessing app settings",
               image: "assets/images/app_settings.png",
-            );
-          },
-        ),
-      ],
-    );
-  }
-
-  // Нова секція для тестування Crashlytics (тимчасово)
-  Widget _buildCrashlyticsTestSection() {
-    return _buildSection(
-      title: 'Developer Tools',
-      children: [
-        _buildListTile(
-          title: 'Test Non-Fatal Error',
-          icon: Icons.warning_amber,
-          onTap: _testCrashlytics,
-        ),
-        _buildListTile(
-          title: 'Test Fatal Crash (Danger!)',
-          icon: Icons.error_outline,
-          onTap: () {
-            showDialog(
-              context: context,
-              builder: (context) => AlertDialog(
-                title: Text('Warning!'),
-                content: Text('This will crash the app for testing purposes. Continue?'),
-                actions: [
-                  TextButton(
-                    onPressed: () => Navigator.pop(context),
-                    child: Text('Cancel'),
-                  ),
-                  TextButton(
-                    onPressed: () {
-                      Navigator.pop(context);
-                      _testFatalError();
-                    },
-                    child: Text('Crash App', style: TextStyle(color: Colors.red)),
-                  ),
-                ],
-              ),
             );
           },
         ),
@@ -740,7 +847,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ),
           onTap: onTap,
         ),
-        if (title != 'Settings' && title != 'Test Fatal Crash (Danger!)')
+        if (title != 'Settings')
           Divider(height: 20, color: Colors.grey[300]),
       ],
     );
