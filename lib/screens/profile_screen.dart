@@ -545,7 +545,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ),
         SizedBox(height: 20),
         
-        // Локальна статистика
         if (_showMetrics) _buildLocalStatsSection(),
         
         Row(
@@ -693,7 +692,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
     return _buildSection(
       title: 'Notification',
       children: [
-        // Cloud сповіщення (Firestore)
         Row(
           children: [
             Icon(Icons.cloud_outlined, color: Colors.grey[600]),
@@ -712,8 +710,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ],
         ),
         Divider(height: 20, color: Colors.grey[300]),
-        
-        // Локальні сповіщення (SharedPreferences)
         Row(
           children: [
             Icon(Icons.phone_android_outlined, color: Colors.grey[600]),
@@ -732,8 +728,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ],
         ),
         Divider(height: 20, color: Colors.grey[300]),
-        
-        // Показ метрик
         Row(
           children: [
             Icon(Icons.analytics_outlined, color: Colors.grey[600]),

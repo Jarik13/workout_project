@@ -273,7 +273,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
           'name': _nameController.text.trim(),
           'email': _emailController.text.trim(),
           'createdAt': FieldValue.serverTimestamp(),
-          'goal': '', // Will be set later
+          'goal': '',
           'weight': '',
           'height': '',
           'gender': '',

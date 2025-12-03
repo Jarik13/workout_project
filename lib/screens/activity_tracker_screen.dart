@@ -70,7 +70,6 @@ class _ActivityTrackerScreenState extends State<ActivityTrackerScreen> {
         _isLoading = false;
       });
 
-      // Сповіщення про відкриття трекера активності
       _notificationService.createNotification(
         title: "Checking your activity progress",
         image: "assets/images/activity_tracker.png",
@@ -98,13 +97,10 @@ class _ActivityTrackerScreenState extends State<ActivityTrackerScreen> {
             'timestamp': FieldValue.serverTimestamp(),
           });
 
-      // Оновлюємо метрики
       await _updateMetrics(type, value);
 
-      // Перезавантажуємо дані
       await _loadUserData();
 
-      // Сповіщення про успішне логування
       _notificationService.createNotification(
         title: "Activity logged: $title",
         image: _getActivityImage(type),
@@ -134,7 +130,7 @@ class _ActivityTrackerScreenState extends State<ActivityTrackerScreen> {
 
       switch (type) {
         case 'water':
-          updates['waterIntake'] = (currentMetrics['waterIntake'] ?? 0.0) + (numValue / 1000); // Convert ml to liters
+          updates['waterIntake'] = (currentMetrics['waterIntake'] ?? 0.0) + (numValue / 1000);
           break;
         case 'steps':
           updates['steps'] = (currentMetrics['steps'] ?? 0) + numValue.toInt();
@@ -153,7 +149,6 @@ class _ActivityTrackerScreenState extends State<ActivityTrackerScreen> {
           'lastUpdated': FieldValue.serverTimestamp(),
         });
 
-        // Перевірка досягнення цілей
         _checkGoalAchievements(updates);
       }
 
@@ -165,7 +160,6 @@ class _ActivityTrackerScreenState extends State<ActivityTrackerScreen> {
   void _checkGoalAchievements(Map<String, dynamic> updates) {
     final dailyMetrics = _userMetrics?['daily_metrics'] ?? {};
     
-    // Перевірка цілі води
     if (updates.containsKey('waterIntake')) {
       final waterIntake = updates['waterIntake'] ?? dailyMetrics['waterIntake'] ?? 0.0;
       if (waterIntake >= 2.0) {
@@ -176,7 +170,6 @@ class _ActivityTrackerScreenState extends State<ActivityTrackerScreen> {
       }
     }
 
-    // Перевірка цілі кроків
     if (updates.containsKey('steps')) {
       final steps = updates['steps'] ?? dailyMetrics['steps'] ?? 0;
       if (steps >= 10000) {
@@ -192,7 +185,6 @@ class _ActivityTrackerScreenState extends State<ActivityTrackerScreen> {
       }
     }
 
-    // Перевірка цілі калорій
     if (updates.containsKey('caloriesBurned')) {
       final calories = updates['caloriesBurned'] ?? dailyMetrics['caloriesBurned'] ?? 0;
       if (calories >= 500) {
@@ -549,7 +541,7 @@ class _ActivityTrackerScreenState extends State<ActivityTrackerScreen> {
 
   Widget _buildWaterIntake() {
     final waterIntake = _dailyMetrics['waterIntake'] ?? 0.0;
-    final goal = 2.0; // 2 liters daily goal
+    final goal = 2.0;
     final progress = waterIntake / goal;
 
     return GestureDetector(
@@ -629,7 +621,7 @@ class _ActivityTrackerScreenState extends State<ActivityTrackerScreen> {
 
   Widget _buildFootSteps() {
     final steps = _dailyMetrics['steps'] ?? 0;
-    final goal = 10000; // 10,000 steps daily goal
+    final goal = 10000;
     final progress = steps / goal;
 
     return GestureDetector(
